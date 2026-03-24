@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Procesador de Imágenes — AWS Serverless</title>
+  <script src="https://sdk.amazonaws.com/js/aws-sdk-2.1474.0.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;700;800&display=swap" rel="stylesheet"/>
+  <style>
+    :root {
+      --bg: #0a0a0f;
+      --panel: #12121a;
+      --border: #2a2a3a;
+      --accent: #00e5ff;
+      --accent2: #7c3aed;
+      --text: #e8e8f0;
+      --muted: #6b6b80;
+      --success: #00ff88;
+      --error: #ff4466;
+      --warning: #ffaa00;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Syne', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px;
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      top: -200px; left: -200px;
+      width: 600px; height: 600px;
+      background: radial-gradient(circle, rgba(124,58,237,0.15) 0%, transparent 70%);
+      pointer-events: none;
+      animation: drift 8s ease-in-out infinite alternate;
+    }
+    body::after {
+      content: '';
+      position: fixed;
+      bottom: -200px; right: -200px;
+      width: 500px; height: 500px;
+      background: radial-gradient(circle, rgba(0,229,255,0.1) 0%, transparent 70%);
+      pointer-events: none;
+      animation: drift 10s ease-in-out infinite alternate-reverse;
+    }
+    @keyframes drift {
+      from { transform: translate(0,0); }
+      to { transform: translate(40px, 30px); }
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 48px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .logo-tag {
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      letter-spacing: 4px;
+      color: var(--accent);
+      text-transform: uppercase;
+      margin-bottom: 12px;
+      opacity: 0.8;
+    }
+
+    h1 {
+      font-size: clamp(2rem, 5vw, 3.5rem);
+      font-weight: 800;
+      line-height: 1.05;
+      background: linear-gradient(135deg, #fff 30%, var(--accent) 70%, var(--accent2) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .subtitle {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 14px;
+      font-family: 'Space Mono', monospace;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 680px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 28px;
+      position: relative;
+      overflow: hidden;
+    }
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--accent2), transparent);
+      opacity: 0.5;
+    }
+
+    .card-label {
+      font-family: 'Space Mono', monospace;
+      font-size: 10px;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 16px;
+    }
+
+    /* Credentials */
+    .creds-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .creds-grid .full { grid-column: 1 / -1; }
+
+    label {
+      display: block;
+      font-family: 'Space Mono', monospace;
+      font-size: 10px;
+      letter-spacing: 2px;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    input[type="text"], input[type="password"] {
+      width: 100%;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-family: 'Space Mono', monospace;
+      font-size: 12px;
+      padding: 10px 14px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    input:focus { border-color: var(--accent); }
+
+    /* Drop zone */
+    .drop-zone {
+      border: 2px dashed var(--border);
+      border-radius: 12px;
+      padding: 48px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.3s;
+      position: relative;
+    }
+    .drop-zone:hover, .drop-zone.dragover {
+      border-color: var(--accent);
+      background: rgba(0,229,255,0.04);
+    }
+    .drop-zone input { display: none; }
+
+    .drop-icon {
+      font-size: 40px;
+      margin-bottom: 12px;
+      display: block;
+    }
+    .drop-text {
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .drop-sub {
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    #preview-container {
+      display: none;
+      margin-top: 16px;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+    #preview-container img {
+      width: 100%;
+      max-height: 220px;
+      object-fit: cover;
+      display: block;
+    }
+    .preview-name {
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      color: var(--muted);
+      padding: 8px 12px;
+      background: rgba(255,255,255,0.03);
+    }
+
+    /* Button */
+    .btn {
+      width: 100%;
+      padding: 14px;
+      border: none;
+      border-radius: 10px;
+      font-family: 'Syne', sans-serif;
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      cursor: pointer;
+      transition: all 0.2s;
+      position: relative;
+      overflow: hidden;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent2), #4f46e5);
+      color: white;
+    }
+    .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(124,58,237,0.4); }
+    .btn-primary:active { transform: translateY(0); }
+    .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: none; }
+
+    .btn-secondary {
+      background: rgba(0,229,255,0.08);
+      color: var(--accent);
+      border: 1px solid rgba(0,229,255,0.3);
+    }
+    .btn-secondary:hover { background: rgba(0,229,255,0.15); }
+
+    /* Progress */
+    .progress-wrap {
+      display: none;
+      margin-top: 16px;
+    }
+    .progress-bar-bg {
+      background: var(--border);
+      border-radius: 99px;
+      height: 4px;
+      overflow: hidden;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent2), var(--accent));
+      border-radius: 99px;
+      width: 0%;
+      transition: width 0.3s;
+    }
+    .progress-label {
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 8px;
+      text-align: right;
+    }
+
+    /* Status log */
+    #log {
+      display: none;
+      font-family: 'Space Mono', monospace;
+      font-size: 12px;
+      line-height: 1.8;
+    }
+    .log-entry {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 6px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+      animation: fadeIn 0.3s ease;
+    }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+    .log-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      margin-top: 6px;
+      flex-shrink: 0;
+    }
+    .log-dot.info { background: var(--accent); }
+    .log-dot.success { background: var(--success); }
+    .log-dot.error { background: var(--error); }
+    .log-dot.wait { background: var(--warning); animation: pulse 1s infinite; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+    .log-msg { color: var(--text); flex: 1; }
+    .log-time { color: var(--muted); font-size: 10px; flex-shrink: 0; }
+
+    /* Result */
+    #result-card { display: none; }
+    #result-card .result-img {
+      width: 100%;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      display: block;
+      margin-bottom: 16px;
+    }
+    .result-actions { display: flex; gap: 12px; }
+    .result-actions .btn { flex: 1; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo-tag">☁ AWS Serverless</div>
+  <h1>Procesador<br/>de Imágenes</h1>
+  <p class="subtitle">S3 · Lambda · Pillow · Bryan Ramírez</p>
+</header>
+
+<div class="container">
+
+  <!-- CREDENCIALES -->
+  <div class="card">
+    <div class="card-label">⚙ Credenciales AWS</div>
+    <div class="creds-grid">
+      <div>
+        <label>Access Key ID</label>
+        <input type="text" id="accessKey" placeholder="AKIA..." value="AKIA5NQTCZW5LYI2KZMA"/>
+      </div>
+      <div>
+        <label>Secret Access Key</label>
+        <input type="password" id="secretKey" placeholder="Tu secret key"/>
+      </div>
+      <div class="full">
+        <label>Session Token (opcional — solo Learner Lab)</label>
+        <input type="text" id="sessionToken" placeholder="Dejar vacío si no aplica"/>
+      </div>
+    </div>
+  </div>
+
+  <!-- SUBIR IMAGEN -->
+  <div class="card">
+    <div class="card-label">① Seleccionar imagen</div>
+    <div class="drop-zone" id="dropZone">
+      <input type="file" id="fileInput" accept="image/*"/>
+      <span class="drop-icon">🖼</span>
+      <div class="drop-text">Arrastra tu imagen aquí</div>
+      <div class="drop-sub">o haz clic para seleccionar · JPG, PNG, WEBP</div>
+    </div>
+    <div id="preview-container">
+      <img id="preview-img" src="" alt="preview"/>
+      <div class="preview-name" id="preview-name"></div>
+    </div>
+  </div>
+
+  <!-- PROCESAR -->
+  <div class="card">
+    <div class="card-label">② Subir y procesar</div>
+    <button class="btn btn-primary" id="uploadBtn" disabled>Subir imagen al bucket de origen</button>
+    <div class="progress-wrap" id="progressWrap">
+      <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressFill"></div></div>
+      <div class="progress-label" id="progressLabel">0%</div>
+    </div>
+  </div>
+
+  <!-- LOG -->
+  <div class="card" id="logCard" style="display:none">
+    <div class="card-label">③ Estado del proceso</div>
+    <div id="log"></div>
+  </div>
+
+  <!-- RESULTADO -->
+  <div class="card" id="result-card">
+    <div class="card-label">④ Imagen procesada</div>
+    <img id="result-img" class="result-img" src="" alt="Imagen procesada"/>
+    <div class="result-actions">
+      <a id="downloadBtn" class="btn btn-secondary" style="text-align:center;text-decoration:none;display:flex;align-items:center;justify-content:center;" download>⬇ Descargar</a>
+      <button class="btn btn-secondary" onclick="location.reload()">↺ Nueva imagen</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  const REGION = 'us-east-1';
+  const BUCKET_ORIGEN = 'imagenes-origen-bryanramirez';
+  const BUCKET_DESTINO = 'imagenes-destino-bryanramirez';
+  const POLLING_INTERVALO = 3000;  // cada 3 segundos reintenta
+  const POLLING_INTENTOS  = 20;    // hasta 60 segundos en total
+
+  let selectedFile = null;
+
+  // Drag & drop
+  const dropZone = document.getElementById('dropZone');
+  const fileInput = document.getElementById('fileInput');
+
+  dropZone.addEventListener('click', () => fileInput.click());
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('dragover');
+    if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+  });
+  fileInput.addEventListener('change', () => { if (fileInput.files[0]) handleFile(fileInput.files[0]); });
+
+  function handleFile(file) {
+    selectedFile = file;
+    const reader = new FileReader();
+    reader.onload = e => {
+      document.getElementById('preview-img').src = e.target.result;
+      document.getElementById('preview-name').textContent = `${file.name}  ·  ${(file.size/1024).toFixed(1)} KB`;
+      document.getElementById('preview-container').style.display = 'block';
+    };
+    reader.readAsDataURL(file);
+    document.getElementById('uploadBtn').disabled = false;
+  }
+
+  function addLog(msg, type = 'info') {
+    const logCard = document.getElementById('logCard');
+    const log = document.getElementById('log');
+    logCard.style.display = 'block';
+    log.style.display = 'block';
+    const now = new Date().toLocaleTimeString('es-CO');
+    const entry = document.createElement('div');
+    entry.className = 'log-entry';
+    entry.innerHTML = `<div class="log-dot ${type}"></div><div class="log-msg">${msg}</div><div class="log-time">${now}</div>`;
+    log.appendChild(entry);
+    entry.scrollIntoView({ behavior: 'smooth' });
+  }
+
+  function setProgress(pct, label) {
+    document.getElementById('progressWrap').style.display = 'block';
+    document.getElementById('progressFill').style.width = pct + '%';
+    document.getElementById('progressLabel').textContent = label || pct + '%';
+  }
+
+  document.getElementById('uploadBtn').addEventListener('click', async () => {
+    if (!selectedFile) return;
+
+    const accessKey = document.getElementById('accessKey').value.trim();
+    const secretKey = document.getElementById('secretKey').value.trim();
+    const sessionToken = document.getElementById('sessionToken').value.trim();
+
+    if (!accessKey || !secretKey) {
+      alert('Ingresa tus credenciales AWS primero.');
+      return;
+    }
+
+    // Configurar AWS SDK
+    AWS.config.update({
+      region: REGION,
+      accessKeyId: accessKey,
+      secretAccessKey: secretKey,
+      ...(sessionToken ? { sessionToken } : {})
+    });
+
+    const s3 = new AWS.S3();
+    const uploadBtn = document.getElementById('uploadBtn');
+    uploadBtn.disabled = true;
+    uploadBtn.textContent = 'Subiendo...';
+
+    const fileName = `imagen-${Date.now()}-${selectedFile.name}`;
+
+    addLog(`Iniciando subida: <strong>${fileName}</strong>`, 'info');
+    setProgress(10, 'Preparando...');
+
+    try {
+      // Subir al bucket origen
+      await s3.upload({
+        Bucket: BUCKET_ORIGEN,
+        Key: fileName,
+        Body: selectedFile,
+        ContentType: selectedFile.type
+      }).on('httpUploadProgress', evt => {
+        const pct = Math.round((evt.loaded / evt.total) * 80);
+        setProgress(pct, `Subiendo... ${pct}%`);
+      }).promise();
+
+      addLog('✓ Imagen subida al bucket de origen', 'success');
+      setProgress(85, 'Esperando a Lambda...');
+      addLog('⏳ Lambda procesando la imagen — esperando resultado...', 'wait');
+
+      // Polling: reintentar cada POLLING_INTERVALO ms hasta POLLING_INTENTOS veces
+      const key_procesada = `procesada-${fileName}`;
+      let encontrada = false;
+
+      for (let intento = 1; intento <= POLLING_INTENTOS; intento++) {
+        await new Promise(r => setTimeout(r, POLLING_INTERVALO));
+
+        const progPct = 85 + Math.min(intento / POLLING_INTENTOS * 13, 13);
+        setProgress(Math.round(progPct), `Verificando... intento ${intento}/${POLLING_INTENTOS}`);
+
+        try {
+          await s3.headObject({ Bucket: BUCKET_DESTINO, Key: key_procesada }).promise();
+          encontrada = true;
+          break; // imagen lista — salir del loop
+        } catch (e) {
+          if (e.code === 'NotFound' || e.code === 'NoSuchKey' || e.statusCode === 404) {
+            // aún no está lista, continuar esperando
+            if (intento % 4 === 0) {
+              addLog(`⏳ Aún procesando... (${intento * POLLING_INTERVALO / 1000}s)`, 'wait');
+            }
+          } else {
+            throw e; // error inesperado — propagar
+          }
+        }
+      }
+
+      if (!encontrada) {
+        throw { code: 'NoSuchKey', message: 'Lambda no generó la imagen en el tiempo esperado.' };
+      }
+
+      // Generar URL firmada para mostrar y descargar
+      const url = s3.getSignedUrl('getObject', {
+        Bucket: BUCKET_DESTINO,
+        Key: key_procesada,
+        Expires: 600
+      });
+
+      setProgress(100, '¡Listo!');
+      addLog('✓ Imagen procesada encontrada', 'success');
+
+      // Mostrar resultado
+      const resultCard = document.getElementById('result-card');
+      resultCard.style.display = 'block';
+      document.getElementById('result-img').src = url;
+      const dlBtn = document.getElementById('downloadBtn');
+      dlBtn.href = url;
+      dlBtn.download = key_procesada;
+
+      resultCard.scrollIntoView({ behavior: 'smooth' });
+      uploadBtn.textContent = '✓ Completado';
+
+    } catch (err) {
+      console.error(err);
+      if (err.code === 'NotFound' || err.code === 'NoSuchKey') {
+        addLog('⚠ Lambda aún no terminó o hubo un error en el procesamiento. Revisa los logs de Lambda en CloudWatch.', 'error');
+      } else {
+        addLog(`✗ Error: ${err.message}`, 'error');
+      }
+      uploadBtn.disabled = false;
+      uploadBtn.textContent = 'Reintentar';
+    }
+  });
+</script>
+</body>
+</html>
